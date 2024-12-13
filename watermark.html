@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+    <title>图片水印工具</title>
+    <style>
+        #graph {
+            display: grid;
+            grid-gap: 10px;
+            grid-template-columns: 1fr 1fr;
+        }
+
+        p,
+        article {
+            margin: 0 0 20px 0
+        }
+
+        article {
+            font-size: 14px;
+            color: #777
+        }
+
+        .align-center-box {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        label {
+            color: blue;
+            font-size: 17px;
+            margin-right: 10px;
+        }
+
+        p label {
+            color: black;
+            display: inline-block;
+            font-size: 15px
+        }
+
+        input#text {
+            width: 100%;
+            box-sizing: border-box;
+            font-size: 16px;
+            margin-bottom: 10px
+        }
+
+        input[type=range] {
+            min-width: 200px;
+            height: 18px;
+            vertical-align: text-bottom;
+            flex: 1;
+        }
+
+        canvas {
+            box-sizing: border-box;
+            width: 100%;
+            border: 1px dashed #AAA;
+            cursor: pointer
+        }
+
+        .label {
+            margin-right: 30px;
+        }
+    </style>
+</head>
+<div id="container">
+    <h1>离线图片水印工具</h1>
+    <article>
+        安全地为你的图片加水印，无任何网络请求，利用浏览器 Api 实现水印，特别适合各种敏感证件（身份证，驾照，护照等）。
+    </article>
+
+    <div class="align-center-box">
+        <label for="image">第一步：先选择本地图片(可多选)</label>
+        <input type="file" id="image" autocomplete="off" multiple>
+        <br>
+        <label for="text">第二步：输入需要打水印的文字</label>
+        <input style="flex: 1; margin-bottom: 0" id="text" autocomplete="off" value="这里是水印文字">
+    </div>
+
+    <p class="align-center-box">
+        <label for="color">颜色</label>
+        <input style="min-width: 30px; max-width: 100px" type="color" id="color" value="#FFFFFF">
+        <label class="label" id="label-color"></label>
+
+        <br>
+        <label for="fontSelect">字体</label>
+        <select style="margin-right: 30px" id="fontSelect">
+        </select>
+
+        <br>
+        <label for="bold">加粗</label>
+        <input type="checkbox" style="margin-right: 30px" id="bold" checked>
+
+        <br>
+        <label for="italic">斜体</label>
+        <input type="checkbox" style="margin-right: 30px" id="italic">
+
+        <br>
+        <label for="xx">交错</label>
+        <input type="checkbox" style="margin-right: 30px" id="xx" checked>
+
+        <br>
+        <label for="alpha">不透明度</label>
+        <input type="range" id="alpha" min="0" max="1" step="0.01" autocomplete="off" value="0.25">
+        <label class="label" id="label-alpha"></label>
+
+        <br>
+        <label for="size">字号</label>
+        <input type="range" id="size" min="0.1" max="5" step="0.01" autocomplete="off" value="0.8">
+        <label class="label" id="label-size"></label>
+
+    </p>
+
+    <p class="align-center-box">
+        <label for="radio">角度</label>
+        <input type="range" id="radio" min="-180" max="180" step="1" autocomplete="off" value="-30">
+        <label class="label" id="label-radio"></label>
+
+        <br>
+        <label for="marginHorizon">左右间隔</label>
+        <input type="range" id="marginHorizon" min="-5" max="12" step="0.1" autocomplete="off" value="1.5">
+        <label class="label" id="label-marginHorizon"></label>
+
+        <br>
+        <label for="marginVertical">上下间隔</label>
+        <input type="range" id="marginVertical" min="-5" max="12" step="0.1" autocomplete="off" value="1.5">
+        <label class="label" id="label-marginVertical"></label>
+    </p>
+
+    <div>
+        <label for="text">第三步：点击图片进行单个图片下载</label>
+        <button onclick="downloadAllPic()">下载全部</button>
+        <label>
+            PNG格式
+            <input type="radio" value="image/png" name="pic-type" class="pic-type" checked>
+        </label>
+        <label>
+            JPEG格式
+            <input type="radio" value="image/jpeg" name="pic-type" class="pic-type">
+        </label>
+        <label>
+            Webp格式
+            <input type="radio" value="image/webp" name="pic-type" class="pic-type">
+        </label>
+
+        <span id="pic-quality-div" style="display: none">
+            <label for="pic-quality">图像质量</label>
+            <input type="range" id="pic-quality" min="1" max="100" step="1" autocomplete="off" value="92">
+            <label class="label" id="label-pic-quality"></label>
+        </span>
+    </div>
+
+    <p id="graph"></p>
+
+    <script>
+        let canvas;
+        let $ = sel => document.querySelector(sel);
+        let inputItems = ['color', 'alpha', "marginHorizon", "marginVertical", 'size', 'radio', "xx", "bold", "italic", "pic-quality"];
+        let configInputSetting = {}; // 保存所有水印
+        let allCanvas = []; // 保存所有的canvas
+
+        let image = $('#image');
+        let graph = $('#graph');
+        let dataURItoBlob = (dataURI, type) => {
+            let i, _i, _ref;
+            let binStr = atob((dataURI.split(','))[1]);
+            let len = binStr.length;
+            let arr = new Uint8Array(len);
+            for (i = _i = 0, _ref = len - 1; 0 <= _ref ? _i <= _ref : _i >= _ref; i = 0 <= _ref ? ++_i : --_i) {
+                arr[i] = binStr.charCodeAt(i);
+            }
+            return new Blob([arr], {
+                type: type
+            });
+        };
+
+        const fontOptions = ["Arial", "Helvetica", "Times New Roman", "Courier New", "Verdana", "Georgia", "Impact", "Tahoma", "Palatino", "Garamond", "Bookman", "Comic Sans MS", "Century Gothic", "Arial Black", "Lucida Console",
+            "幼圆", "新宋体", "文泉驿微米黑", "微软正黑体", "微软雅黑", "宋体", "思源宋体", "思源黑体", "苹方", "隶书", "楷体", "开源字体", "华文中宋", "华文中宋", "华文行楷", "华文行楷", "华文新魏", "华文新魏", "华文细黑", "华文宋体", "华文宋体", "华文隶书", "华文隶书", "华文楷体", "华文楷体", "华文琥珀", "华文琥珀", "华文黑体", "华文仿宋", "华文仿宋", "华文彩云", "黑体", "汉仪雅酷黑W", "汉仪小麦体", "汉仪尚魏手书W", "汉仪旗黑", "汉仪旗黑", "汉仪旗黑", "汉仪乐喵体简", "汉仪楷体", "汉仪家书简", "汉仪黑荔枝", "汉仪大宋简", "汉仪大黑简", "汉仪程行体", "汉仪PP体简", "仿宋",];
+        const selectElement = $("#fontSelect");
+        // 遍历字体选项数组
+        for (let i = 0; i < fontOptions.length; i++) {
+            const optionElement = document.createElement("option");
+            optionElement.value = fontOptions[i];
+            optionElement.textContent = fontOptions[i];
+            optionElement.style.fontFamily = fontOptions[i];
+            selectElement.appendChild(optionElement);
+        }
+
+        const redrawCanvas = (canvas, img) => {
+            // 重新设置canvas的宽高，会清空画布
+            let w = canvas.width;
+            let h = canvas.height;
+            canvas.width = w;
+            canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0);
+        };
+
+        const downloadCanvasAsImage = (canvas, fileName) => {
+            let type = configInputSetting["pic-type"] ? configInputSetting["pic-type"] : "image/png";
+            let link = document.createElement('a');
+            link.download = fileName + "_watermark." + type.split("/")[1];
+            let imageData = canvas.toDataURL(type, parseFloat($("#pic-quality").value) / 100);
+            let blob = dataURItoBlob(imageData, type);
+            link.href = URL.createObjectURL(blob);
+            graph.appendChild(link);
+            return setTimeout(function () {
+                link.click();
+                return graph.removeChild(link);
+            }, 10);
+        }
+        const downloadAllPic = async () => {
+            allCanvas.forEach(({canvas, img, fileName}) => {
+                downloadCanvasAsImage(canvas, fileName);
+            })
+        }
+        let readFile = file => {
+            if (file == null) {
+                return;
+            }
+            let fileReader = new FileReader;
+            fileReader.onload = function () {
+                let img = new Image;
+                img.onload = function () {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    let ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+
+                    allCanvas.push({img: img, canvas: canvas, fileName: file.name});
+
+                    drawText(canvas, img);
+                    graph.appendChild(canvas);
+
+                    return canvas.addEventListener('click', () => downloadCanvasAsImage(canvas, file.name));
+                };
+                return img.src = fileReader.result;
+            };
+            return fileReader.readAsDataURL(file);
+        };
+        const makeStyle = () => {
+            let match = configInputSetting.color.value.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+            return 'rgba(' + (parseInt(match[1], 16)) + ',' + (parseInt(match[2], 16)) + ',' + (parseInt(match[3],
+                16)) + ',' + configInputSetting.alpha.value + ')';
+        };
+
+        const drawText = (canvas, img) => {
+            redrawCanvas(canvas, img);
+            if (canvas == null) {
+                return;
+            }
+
+            let textSize = configInputSetting.size.value * Math.max(15, (Math.min(canvas.width, canvas.height)) / 25);
+            let textCtx = canvas.getContext('2d');
+            textCtx.fillStyle = makeStyle();
+
+            textCtx.font = ($("#bold").checked ? "bold " : "") + ($("#italic").checked ? "italic " : "") + textSize + "px " + $("#fontSelect").value;
+
+            let baseWidth = (textCtx.measureText('啊')).width;
+
+            let textWidth = (textCtx.measureText(configInputSetting.text.value)).width;
+            let xAdd = textWidth + configInputSetting.marginHorizon.value * baseWidth;
+            let yAdd = textWidth + configInputSetting.marginVertical.value * baseWidth;
+            xAdd = Math.max(xAdd, 10);
+            yAdd = Math.max(yAdd, 10);
+
+            let border = 500;
+            for (let i = -1 * border; i < canvas.width + border; i += xAdd) {
+                for (let j = -1 * border, jj = 0; j < canvas.height + border; j += yAdd, jj++) {
+                    textCtx.save();
+                    textCtx.translate(i + Math.ceil(jj % 2 === 0 ? xAdd / (configInputSetting.xx.checked ? 2 : 1) : 0), j);
+                    textCtx.rotate(configInputSetting.radio.value * Math.PI / 180);
+                    textCtx.fillText(configInputSetting.text.value, 0, 0);
+                    textCtx.restore();
+                }
+            }
+        };
+
+        let picTypeInputs = document.getElementsByClassName("pic-type");
+        for (let i = 0; i < picTypeInputs.length; i++) {
+            let item = picTypeInputs[i];
+            item.addEventListener('change', () => {
+                let picQuality = $("#pic-quality-div");
+                picQuality.style.display = "none";
+                if (item.checked) {
+                    configInputSetting["pic-type"] = item.value;
+                    if ("image/webp" === item.value || "image/jpeg" === item.value) {
+                        picQuality.style.display = "";
+                    }
+                }
+            });
+        }
+
+        image.addEventListener('change', function () {
+            // 处理批量图片
+            const batchFileHandler = file => {
+                const type = file.type;
+                if (!['image/png', 'image/jpeg', 'image/webp'].includes(type)) {
+                    return alert('仅支持 png, jpg, webp 图片格式');
+                }
+                readFile(file);
+            };
+            [...this.files].forEach(batchFileHandler);
+        });
+
+        configInputSetting["text"] = $('#text');
+        configInputSetting["text"].addEventListener('input', () => {
+            allCanvas.forEach(({canvas, img}) => drawText(canvas, img));
+        });
+
+        configInputSetting["fontSelect"] = $('#fontSelect');
+        configInputSetting["fontSelect"].addEventListener('change', () => {
+            allCanvas.forEach(({canvas, img}) => drawText(canvas, img));
+        });
+
+        inputItems.forEach(item => {
+            let el = $('#' + item);
+            configInputSetting[item] = el;
+            let labelDom = "#label-" + item;
+            $(labelDom) ? $(labelDom).innerText = isNaN(el.value) ? el.value : parseFloat(el.value).toFixed(2) : "";
+            return el.addEventListener('input', () => {
+                $(labelDom) ? $(labelDom).innerText = isNaN(el.value) ? el.value : parseFloat(el.value).toFixed(2) : "";
+                allCanvas.forEach(({canvas, img}) => {
+                    drawText(canvas, img);
+                });
+            });
+        });
+    </script>
+</div>
+</html>
